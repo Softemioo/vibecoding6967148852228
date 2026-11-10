@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PythonCamp - Интерактивный курс Python</title>
+    <!-- Подключаем Pyodide для запуска Python в браузере -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+
+    <style>
+        :root {
+            --bg-dark: #0a0a23;
+            --bg-panel: #1b1b32;
+            --text-color: #f5f6f7;
+            --accent: #feac32;
+            --success: #acd157;
+            --error: #ff4d4d;
+            --border: #3b3b4f;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-color);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            background-color: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+        }
+
+        .logo { font-weight: bold; font-size: 1.2rem; color: var(--accent); }
+        .status-bar { font-size: 0.9rem; color: #aaa; }
+
+        /* Main Layout */
+        main {
+            display: flex;
+            flex: 1;
+            height: calc(100vh - 60px);
+        }
+
+        /* Sidebar (Curriculum) */
+        aside {
+            width: 250px;
+            background-color: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            display: none; /* Скрыто на мобильных по умолчанию */
+        }
+
+        @media (min-width: 768px) {
+            aside { display: block; }
+        }
+
+        .lesson-item {
+            padding: 15px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+        }
+
+        .lesson-item:hover { background-color: #2a2a40; }
+        .lesson-item.active { background-color: #3b3b4f; border-left: 4px solid var(--accent); }
+        .lesson-title { font-weight: bold; margin-bottom: 5px; }
+        .lesson-desc { font-size: 0.8rem; color: #ccc; }
+
+        /* Workspace */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            gap: 20px;
+            overflow-y: auto;
+        }
+
+        /* Instruction Panel */
+        .instructions {
+            background: var(--bg-panel);
+            padding: 20px;
+            border-radius: 5px;
+            border: 1px solid var(--border);
+            max-width: 800px;
+        }
+        .instructions h2 { margin-bottom: 10px; color: var(--accent); }
+        .instructions p { line-height: 1.6; margin-bottom: 10px; }
+        .instructions code {
+            background: #000;
+            padding: 2px 5px;
+            border-radius: 3px;
+            font-family: monospace;
+            color: var(--success);
+        }
+
+        /* Editor & Console Area */
+        .coding-area {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            gap: 10px;
+            min-height: 400px;
+        }
+
+        .editor-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        textarea#code-editor {
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            color: #fff;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 16px;
+            padding: 15px;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            resize: none;
+            outline: none;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1rem;
+            transition: opacity 0.2s;
+        }
+
+        button:hover { opacity: 0.9; }
+
+        .btn-run { background-color: var(--accent); color: #000; }
+        .btn-reset { background-color: var(--border); color: #fff; }
+
+        /* Console Output */
+        .console {
+            background-color: #000;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 15px;
+            height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 14px;
+        }
+
+        .output-line { margin-bottom: 5px; white-space: pre-wrap; }
+        .output-error { color: var(--error); }
+        .output-success { color: var(--success); }
+        .system-msg { color: #888; font-style: italic; }
+
+        /* Loader */
+        #loader {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            color: white;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 5px solid #333;
+            border-top: 5px solid var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    </style>
+</head>
+<body>
+
+    <!-- Loader -->
+    <div id="loader">
+        <div class="spinner"></div>
+        <h2>Загрузка среды Python...</h2>
+        <p>Это может занять несколько секунд (загрузка WebAssembly)</p>
+    </div>
+
+    <header>
+        <div class="logo">🐍 PythonCamp</div>
+        <div class="status-bar" id="status-text">Готов к работе</div>
+    </header>
+
+    <main>
+        <aside id="sidebar">
+            <!-- Список уроков генерируется JS -->
+        </aside>
+
+        <div class="workspace">
+            <div class="instructions" id="instruction-panel">
+                <!-- Инструкция генерируется JS -->
+            </div>
+
+            <div class="coding-area">
+                <div class="editor-container">
+                    <textarea id="code-editor" spellcheck="false"></textarea>
+                </div>
+
+                <div class="controls">
+                    <button class="btn-run" onclick="runCode()">▶ Запустить код</button>
+                    <button class="btn-reset" onclick="resetCode()">↺ Сбросить</button>
+                </div>
+
+                <div class="console" id="console-output">
+                    <div class="system-msg">Ожидание ввода...</div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // --- ДАННЫЕ КУРСА ---
+        const curriculum = [
+            {
+                id: 1,
+                title: "Привет, Мир!",
+                desc: "Основы вывода текста",
+                instruction: `
+                    <h2>Урок 1: Вывод данных</h2>
+                    <p>Добро пожаловать в Python! Традиционно, первая программа программиста выводит фразу "Hello World".</p>
+                    <p>В Python для вывода текста на экран используется функция <code>print()</code>.</p>
+                    <p><strong>Задание:</strong></p>
+                    <ul>
+                        <li>Используйте функцию print, чтобы вывести текст <code>Hello World</code>.</li>
+                    </ul>
+                `,
+                defaultCode: "# Напишите ваш код здесь\n",
+                check: (output) => output.includes("Hello World")
+            },
+            {
+                id: 2,
+                title: "Переменные",
+                desc: "Хранение данных",
+                instruction: `
+                    <h2>Урок 2: Переменные</h2>
+                    <p>Переменные — это контейнеры для хранения данных. В Python не нужно объявлять тип переменной заранее.</p>
+                    <p>Пример:<br><code>name = "Alex"</code><br><code>age = 25</code></p>
+                    <p><strong>Задание:</strong></p>
+                    <ul>
+                        <li>Создайте переменную с именем <code>hero</code> и присвойте ей значение <code>"Python"</code>.</li>
+                        <li>Выведите значение этой переменной на экран.</li>
+                    </ul>
+                `,
+                defaultCode: "# Создайте переменную hero\n",
+                check: (output) => output.includes("Python")
+            },
+            {
+                id: 3,
+                title: "Математика",
+                desc: "Арифметические операции",
+                instruction: `
+                    <h2>Урок 3: Арифметика</h2>
+                    <p>Python отлично справляется с математикой. Основные операторы: <code>+</code>, <code>-</code>, <code>*</code>, <code>/</code>.</p>
+                    <p><strong>Задание:</strong></p>
+                    <ul>
+                        <li>Вычислите сумму чисел 10 и 20.</li>
+                        <li>Выведите результат (должно получиться 30).</li>
+                    </ul>
+                `,
+                defaultCode: "# Вычислите 10 + 20\n",
+                check: (output) => output.trim() === "30"
+            },
+            {
+                id: 4,
+                title: "Циклы",
+                desc: "Цикл for",
+                instruction: `
+                    <h2>Урок 4: Цикл for</h2>
+                    <p>Циклы позволяют повторять действия. Конструкция <code>range(n)</code> создает последовательность от 0 до n-1.</p>
+                    <p>Пример:<br>
+                    <code>for i in range(3):<br>&nbsp;&nbsp;&nbsp;&nbsp;print(i)</code></p>
+                    <p><strong>Задание:</strong></p>
+                    <ul>
+                        <li>Напишите цикл, который выведет числа 0, 1 и 2 (каждое с новой строки).</li>
+                    </ul>
+                `,
+                defaultCode: "# Используйте цикл for\n",
+                check: (output) => output.trim().split('\n').map(x=>x.trim()).join(',') === "0,1,2"
+            },
+            {
+                id: 5,
+                title: "Функции",
+                desc: "Создание функций",
+                instruction: `
+                    <h2>Урок 5: Функции</h2>
+                    <p>Функции помогают группировать код. Они определяются ключевым словом <code>def</code>.</p>
+                    <p><strong>Задание:</strong></p>
+                    <ul>
+                        <li>Создайте функцию <code>say_hi</code>, которая печатает "Hi there!".</li>
+                        <li>Вызовите эту функцию.</li>
+                    </ul>
+                `,
+                defaultCode: "def say_hi():\n    pass\n\n# Вызовите функцию ниже\n",
+                check: (output) => output.includes("Hi there!")
+            }
+        ];
+
+        // --- СОСТОЯНИЕ ПРИЛОЖЕНИЯ ---
+        let currentLessonIndex = 0;
+        let pyodide = null;
+
+        // --- ИНИЦИАЛИЗАЦИЯ ---
+        async function init() {
+            try {
+                // Загрузка Pyodide
+                pyodide = await loadPyodide();
+                document.getElementById('loader').style.display = 'none';
+                renderSidebar();
+                loadLesson(0);
+            } catch (err) {
+                document.getElementById('loader').innerHTML = `<h2 style="color:red">Ошибка загрузки</h2><p>${err.message}</p>`;
+            }
+        }
+
+        // --- РЕНДЕРИНГ ИНТЕРФЕЙСА ---
+        function renderSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.innerHTML = '';
+            curriculum.forEach((lesson, index) => {
+                const div = document.createElement('div');
+                div.className = `lesson-item ${index === currentLessonIndex ? 'active' : ''}`;
+                div.onclick = () => loadLesson(index);
+                div.innerHTML = `
+                    <div class="lesson-title">${index + 1}. ${lesson.title}</div>
+                    <div class="lesson-desc">${lesson.desc}</div>
+                `;
+                sidebar.appendChild(div);
+            });
+        }
+
+        function loadLesson(index) {
+            currentLessonIndex = index;
+            const lesson = curriculum[index];
+
+            // Обновляем активный класс в меню
+            const items = document.querySelectorAll('.lesson-item');
+            items.forEach(i => i.classList.remove('active'));
+            if(items[index]) items[index].classList.add('active');
+
+            // Заполняем контент
+            document.getElementById('instruction-panel').innerHTML = lesson.instruction;
+            document.getElementById('code-editor').value = lesson.defaultCode;
+
+            // Очищаем консоль
+            const consoleDiv = document.getElementById('console-output');
+            consoleDiv.innerHTML = '<div class="system-msg">Урок загружен. Нажмите "Запустить код".</div>';
+        }
+
+        function resetCode() {
+            document.getElementById('code-editor').value = curriculum[currentLessonIndex].defaultCode;
+        }
+
+        // --- ЛОГИКА ВЫПОЛНЕНИЯ КОДА ---
+        async function runCode() {
+            const code = document.getElementById('code-editor').value;
+            const consoleDiv = document.getElementById('console-output');
+            consoleDiv.innerHTML = ''; // Очистка перед запуском
+
+            // Перехват stdout (вывода print)
+            pyodide.setStdout({ batched: (msg) => addToConsole(msg, '') });
+
+            try {
+                // Выполнение кода
+                await pyodide.runPythonAsync(code);
+
+                // Проверка задания
+                const fullOutput = getFullConsoleOutput();
+                const isCorrect = curriculum[currentLessonIndex].check(fullOutput);
+
+                if (isCorrect) {
+                    addToConsole("\n✅ Задание выполнено! Переход к следующему...", "output-success");
+                    setTimeout(() => {
+                        if (currentLessonIndex < curriculum.length - 1) {
+                            if(confirm("Отлично! Перейти к следующему уроку?")) {
+                                loadLesson(currentLessonIndex + 1);
+                            }
+                        } else {
+                            alert("Поздравляем! Вы прошли весь доступный курс!");
+                        }
+                    }, 1000);
+                } else {
+                    addToConsole("\n❌ Результат не совпадает с заданием. Попробуйте еще раз.", "output-error");
+                }
+
+            } catch (err) {
+                addToConsole(err.message, "output-error");
+            }
+        }
+
+        // Хранилище вывода консоли для проверки
+        let consoleBuffer = "";
+
+        function addToConsole(text, className) {
+            const consoleDiv = document.getElementById('console-output');
+            const line = document.createElement('div');
+            line.className = `output-line ${className}`;
+            line.textContent = text;
+            consoleDiv.appendChild(line);
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+
+            consoleBuffer += text + "\n";
+        }
+
+        function getFullConsoleOutput() {
+            return consoleBuffer;
+        }
+
+        // Сброс буфера при смене урока
+        const originalLoadLesson = loadLesson;
+        loadLesson = function(index) {
+            consoleBuffer = "";
+            originalLoadLesson(index);
+        }
+
+        // Запуск
+        init();
+
+    </script>
+</body>
+</html>
